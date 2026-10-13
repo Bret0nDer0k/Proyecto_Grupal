@@ -1,7 +1,9 @@
 <?php
 
 use App\Domains\Financial\Enums\MovementType;
+use App\Domains\Financial\Enums\TransactionStatus;
 use App\Domains\Financial\Enums\WalletType;
+use App\Domains\Financial\Models\FinancialReceipt;
 use App\Domains\Financial\Models\FinancialTransaction;
 use App\Domains\Financial\Models\LedgerEntry;
 use App\Domains\Financial\Models\Wallet;
@@ -9,6 +11,7 @@ use App\Domains\Financial\Services\LedgerService;
 use App\Domains\Financial\Services\ReceiptService;
 use App\Domains\Financial\Services\WalletService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Str;
 
 afterEach(function () {
     $transactions = FinancialTransaction::whereIn(
@@ -16,8 +19,14 @@ afterEach(function () {
         [
             'test-receipt-credit',
             'test-receipt-other-credit',
+            'test-receipt-pending',
         ]
     )->get();
+
+    FinancialReceipt::whereIn(
+        'transaction_id',
+        $transactions->pluck('public_id')
+    )->delete();
 
     foreach ($transactions as $transaction) {
         LedgerEntry::where(
@@ -37,7 +46,7 @@ afterEach(function () {
     )->delete();
 });
 
-test('builds a receipt from a ledger transaction', function () {
+test('builds stable evidence from a completed ledger transaction', function () {
     $wallet = app(WalletService::class)->create(
         'USER',
         'test-receipt-user',
@@ -53,26 +62,56 @@ test('builds a receipt from a ledger transaction', function () {
         'receipt-001'
     );
 
-    $receipt = app(ReceiptService::class)->forTransaction(
+    $service = app(ReceiptService::class);
+
+    $first = $service->forTransaction(
         $transaction->public_id
     );
 
-    expect(strtolower($receipt['transaction_id']))
+    $second = $service->forTransaction(
+        $transaction->public_id
+    );
+
+    expect(strtolower($first['transaction_id']))
         ->toBe(strtolower($transaction->public_id))
-        ->and($receipt['status'])
+        ->and($first['status'])
         ->toBe('COMPLETADA')
-        ->and($receipt['reference_type'])
-        ->toBe('TEST')
-        ->and($receipt['reference_id'])
-        ->toBe('receipt-001')
-        ->and($receipt['entries'])
-        ->toHaveCount(1)
-        ->and($receipt['entries'][0]['movement_type'])
-        ->toBe('RECARGA')
-        ->and($receipt['entries'][0]['amount_cents'])
+        ->and($first['total_amount_cents'])
         ->toBe(12500)
-        ->and($receipt['entries'][0]['currency'])
-        ->toBe('MXN');
+        ->and($first['currency'])
+        ->toBe('MXN')
+        ->and($first['entries'])
+        ->toHaveCount(1)
+        ->and($first['entries'][0]['movement_type'])
+        ->toBe('RECARGA')
+        ->and($first['entries'][0]['amount_cents'])
+        ->toBe(12500)
+        ->and($second['receipt_id'])
+        ->toBe($first['receipt_id'])
+        ->and($second['verification']['id'])
+        ->toBe($first['verification']['id']);
+});
+
+test('does not emit a final receipt for a pending transaction', function () {
+    $transaction = FinancialTransaction::create([
+        'public_id' => (string) Str::uuid(),
+        'idempotency_key' => 'test-receipt-pending',
+        'status' => TransactionStatus::PENDIENTE,
+        'reference_type' => 'TEST',
+        'reference_id' => 'pending',
+    ]);
+
+    expect(
+        fn () => app(ReceiptService::class)
+            ->forTransaction($transaction->public_id)
+    )->toThrow(InvalidArgumentException::class);
+
+    expect(
+        FinancialReceipt::where(
+            'transaction_id',
+            $transaction->public_id
+        )->exists()
+    )->toBeFalse();
 });
 
 test('wallet receipt only exposes transactions belonging to that wallet', function () {

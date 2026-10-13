@@ -1,19 +1,23 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
+import QRCode from 'qrcode';
+import { onMounted, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
     receipt: {
         type: Object,
         required: true,
     },
 });
 
+const qrDataUrl = ref('');
+
 const formatMoney = (cents, currency = 'MXN') =>
     new Intl.NumberFormat('es-MX', {
         style: 'currency',
         currency: currency || 'MXN',
-    }).format(cents / 100);
+    }).format((cents || 0) / 100);
 
 const formatDate = (date) => {
     if (!date) return '';
@@ -25,6 +29,21 @@ const formatDate = (date) => {
 };
 
 const printReceipt = () => window.print();
+
+onMounted(async () => {
+    if (!props.receipt.verification?.url) {
+        return;
+    }
+
+    qrDataUrl.value = await QRCode.toDataURL(
+        props.receipt.verification.url,
+        {
+            width: 220,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+        }
+    );
+});
 </script>
 
 <template>
@@ -73,9 +92,16 @@ const printReceipt = () => window.print();
 
                     <div class="mt-6 grid gap-4 sm:grid-cols-2">
                         <div>
-                            <p class="text-xs uppercase text-slate-500">Transacción</p>
+                            <p class="text-xs uppercase text-slate-500">Folio</p>
+                            <p class="mt-1 font-bold text-slate-800">
+                                {{ receipt.folio || 'Pendiente de definición' }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <p class="text-xs uppercase text-slate-500">ID técnico</p>
                             <p class="mt-1 break-all font-mono text-sm text-slate-800">
-                                {{ receipt.transaction_id }}
+                                {{ receipt.receipt_id }}
                             </p>
                         </div>
 
@@ -87,20 +113,68 @@ const printReceipt = () => window.print();
                         </div>
 
                         <div>
-                            <p class="text-xs uppercase text-slate-500">Fecha</p>
+                            <p class="text-xs uppercase text-slate-500">Fecha de emisión</p>
                             <p class="mt-1 text-slate-800">
                                 {{ formatDate(receipt.issued_at) }}
                             </p>
                         </div>
 
                         <div>
-                            <p class="text-xs uppercase text-slate-500">Referencia</p>
+                            <p class="text-xs uppercase text-slate-500">Total</p>
+                            <p class="mt-1 text-xl font-bold text-[#00338D]">
+                                {{
+                                    formatMoney(
+                                        receipt.total_amount_cents,
+                                        receipt.currency
+                                    )
+                                }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <p class="text-xs uppercase text-slate-500">Forma de pago</p>
                             <p class="mt-1 text-slate-800">
+                                {{ receipt.payment_method || 'Ver componentes' }}
+                            </p>
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <p class="text-xs uppercase text-slate-500">Referencia</p>
+                            <p class="mt-1 break-all text-slate-800">
                                 {{ receipt.reference_type || 'Sin referencia' }}
                                 <span v-if="receipt.reference_id">
                                     · {{ receipt.reference_id }}
                                 </span>
                             </p>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="receipt.payment_components?.length"
+                        class="mt-8"
+                    >
+                        <h2 class="text-lg font-bold text-[#00338D]">
+                            Componentes del pago
+                        </h2>
+
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div
+                                v-for="(component, index) in receipt.payment_components"
+                                :key="`${component.type}-${index}`"
+                                class="rounded-xl border border-slate-200 p-4"
+                            >
+                                <p class="font-bold text-slate-800">
+                                    {{ component.type }}
+                                </p>
+                                <p class="mt-1 text-sm text-slate-600">
+                                    {{
+                                        formatMoney(
+                                            component.amount_cents,
+                                            receipt.currency
+                                        )
+                                    }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -133,23 +207,35 @@ const printReceipt = () => window.print();
                                             formatMoney(entry.amount_cents, entry.currency)
                                         }}
                                     </p>
-                                    <p class="mt-1 text-sm text-slate-500">
-                                        Saldo disponible:
-                                        {{
-                                            formatMoney(
-                                                entry.available_balance_after_cents,
-                                                entry.currency
-                                            )
-                                        }}
-                                    </p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
+                    <div
+                        v-if="qrDataUrl"
+                        class="mt-8 border-t border-slate-200 pt-6 text-center"
+                    >
+                        <h2 class="text-lg font-bold text-[#00338D]">
+                            Verificación
+                        </h2>
+                        <p class="mx-auto mt-2 max-w-lg text-sm text-slate-500">
+                            El QR contiene únicamente un enlace con un identificador
+                            aleatorio de verificación.
+                        </p>
+                        <img
+                            :src="qrDataUrl"
+                            alt="QR de verificación del comprobante"
+                            class="mx-auto mt-4 h-[220px] w-[220px]"
+                        />
+                        <p class="mx-auto mt-2 max-w-xl break-all font-mono text-xs text-slate-400">
+                            {{ receipt.verification.url }}
+                        </p>
+                    </div>
+
                     <p class="mt-6 text-xs leading-5 text-slate-500">
-                        Este comprobante se genera a partir de la transacción y de los
-                        movimientos registrados en el ledger financiero.
+                        Este comprobante se genera exclusivamente a partir de evidencia
+                        financiera confirmada por el ledger.
                     </p>
                 </section>
             </div>

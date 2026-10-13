@@ -17,7 +17,7 @@ const formatMoney = (cents, currency = 'MXN') =>
     new Intl.NumberFormat('es-MX', {
         style: 'currency',
         currency: currency || 'MXN',
-    }).format(cents / 100);
+    }).format((cents || 0) / 100);
 
 const formatDate = (date) => {
     if (!date) return '';
@@ -64,37 +64,40 @@ const formatDate = (date) => {
                             Mis comprobantes
                         </h1>
                         <p class="mt-2 text-sm leading-6 text-slate-500">
-                            Consulta los movimientos registrados en tu ledger y abre su comprobante.
+                            Solo se muestran operaciones con estado financiero final
+                            y evidencia registrada en el ledger.
                         </p>
                     </div>
 
                     <div v-if="wallet && receipts.length" class="mt-6 divide-y divide-slate-100">
                         <div
                             v-for="receipt in receipts"
-                            :key="receipt.transaction_id + '-' + receipt.movement_type"
+                            :key="receipt.receipt_id"
                             class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
                         >
                             <div>
                                 <p class="font-bold text-slate-800">
-                                    {{ receipt.movement_type }}
+                                    {{ receipt.reference_type || 'Operación financiera' }}
                                 </p>
                                 <p class="mt-1 text-sm text-slate-500">
-                                    {{ formatDate(receipt.created_at) }}
+                                    {{ formatDate(receipt.issued_at) }}
                                 </p>
-                                <p v-if="receipt.reference_type" class="mt-1 text-xs text-slate-400">
-                                    {{ receipt.reference_type }}
-                                    <span v-if="receipt.reference_id"> · {{ receipt.reference_id }}</span>
+                                <p class="mt-1 text-xs text-slate-400">
+                                    {{ receipt.folio || receipt.receipt_id }}
                                 </p>
                             </div>
 
                             <div class="sm:text-right">
-                                <p
-                                    class="text-lg font-bold"
-                                    :class="receipt.amount_cents >= 0 ? 'text-emerald-600' : 'text-red-600'"
-                                >
-                                    {{ receipt.amount_cents >= 0 ? '+' : '' }}{{
-                                        formatMoney(receipt.amount_cents, receipt.currency)
+                                <p class="text-lg font-bold text-[#00338D]">
+                                    {{
+                                        formatMoney(
+                                            receipt.total_amount_cents,
+                                            receipt.currency
+                                        )
                                     }}
+                                </p>
+                                <p class="mt-1 text-xs font-semibold text-slate-500">
+                                    {{ receipt.status }}
                                 </p>
 
                                 <Link
@@ -112,7 +115,7 @@ const formatDate = (date) => {
                         class="mt-6 rounded-xl border border-dashed border-slate-200 p-6 text-center"
                     >
                         <p class="text-sm text-slate-500">
-                            No hay comprobantes disponibles.
+                            No hay comprobantes confirmados disponibles.
                         </p>
                     </div>
                 </section>

@@ -30,12 +30,34 @@ class ReceiptController extends Controller
         ]);
     }
 
+    public function verify(
+        string $verificationId,
+        ReceiptService $receiptService
+    ): JsonResponse {
+        $result = $receiptService->verify(
+            $verificationId
+        );
+
+        return response()->json([
+            'data' => $result ?? [
+                'valid' => false,
+            ],
+            'meta' => $this->meta(),
+        ]);
+    }
+
     private function meta(): array
     {
+        $requestId = request()->header(
+            'X-Request-Id',
+            (string) str()->uuid()
+        );
+
         return [
-            'request_id' => request()->header(
-                'X-Request-Id',
-                (string) str()->uuid()
+            'request_id' => $requestId,
+            'correlation_id' => request()->header(
+                'X-Correlation-Id',
+                $requestId
             ),
             'api_version' => 'v1',
         ];
